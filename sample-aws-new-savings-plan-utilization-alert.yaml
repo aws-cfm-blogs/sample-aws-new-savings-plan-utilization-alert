@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Transform:
+  - AWS::LanguageExtensions
+  - AWS::Serverless-2016-10-31
+
+Parameters:
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 9 * * ? *)
+
+  AlertEmails:
+    Type: CommaDelimitedList
+    AllowedPattern: ^[\w\-\.\+]+@([\w-]+\.)+[\w-]{2,}$
+    ConstraintDescription: Please supply at least one valid email address
+
+  UtilizationThreshold:
+    Type: Number
+    Default: 50
+
+Resources:
+  SavingsPlansAlerts:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - savingsplans:DescribeSavingsPlans
+              Resource:
+                - !Sub arn:${AWS::Partition}:savingsplans::${AWS::AccountId}:savingsplan/*
+            - Effect: Allow
+              Action:
+                - ce:GetSavingsPlansUtilization
+              Resource:
+                - "*"
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource:
+                - !Ref SnsTopic
+      Events:
+        ScheduleEvent:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Ref ScheduleExpression
+      Definition:
+        QueryLanguage: JSONata
+        StartAt: SetVariables
+        States:
+          SetVariables:
+            Type: Pass
+            Assign:
+              currentDateStr: >-
+                {% $now('[Y0001]-[M01]-[D01]') %}
+              currentDateMS: >-
+                {% $toMillis($now()) %}
+              currentDateM: >-
+                {% $now('[M01]') %}
+              startDateStr: >-
+                {% $fromMillis($toMillis($now()) - 6*24*60*60*1000, '[Y0001]-[M01]-[D01]') %}
+            Next: DescribeSavingsPlans
+          DescribeSavingsPlans:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
+            Arguments:
+              States:
+                - active
+            Assign:
+              nextToken: >-
+                {% $exists($states.result.nextToken) ? $states.result.nextToken : '' %}
+            Output: >-
+              {% $states.result %}
+            Next: MapSavingsPlans
+          MapSavingsPlans:
+            Type: Map
+            Items: >-
+              {% $states.input.SavingsPlans %}
+            ItemProcessor:
+              ProcessorConfig:
+                Mode: INLINE
+              StartAt: GetPurchaseDate
+              States:
+                GetPurchaseDate:
+                  Type: Pass
+                  Assign:
+                    purchaseDateStr: >-
+                      {% $states.input.Start %}
+                    purchaseDateMS: >-
+                      {% $toMillis($states.input.Start) %}
+                    purchaseDateM: >-
+                      {% $fromMillis($toMillis($states.input.Start), '[M01]') %}
+                  Output: >-
+                    {% $states.input %}
+                  Next: CheckEligibility
+                CheckEligibility:
+                  Type: Choice
+                  Default: Ineligible
+                  Choices:
+                    - Next: GetSavingsPlansUtilization
+                      Condition: >-
+                        {% ($currentDateMS - $purchaseDateMS <= (7*24*60*60*1000)) and ($currentDateM = $purchaseDateM) %}
+                      Output: >-
+                        {% $states.input %}
+                Ineligible:
+                  Type: Succeed
+                GetSavingsPlansUtilization:
+                  Type: Task
+                  Resource: arn:aws:states:::aws-sdk:costexplorer:getSavingsPlansUtilization
+                  Arguments:
+                    TimePeriod:
+                      Start: >-
+                        {% $startDateStr %}
+                      End: >-
+                        {% $currentDateStr %}
+                    Granularity: DAILY
+                    Filter:
+                      Dimensions:
+                        Key: SAVINGS_PLAN_ARN
+                        MatchOptions:
+                          - EQUALS
+                        Values:
+                          - >-
+                            {% $states.input.SavingsPlanArn %}
+                  Assign:
+                    UtilizationPercentage: >-
+                      {% $number($substringBefore($states.result.Total.Utilization.UtilizationPercentage, '%')) %}
+                  Output: >-
+                    {% $states.input %}
+                  Catch:
+                    - ErrorEquals:
+                        - CostExplorer.DataUnavailableException
+                      Next: DataUnavailableException
+                  Next: CheckUtilizationPercentage
+                DataUnavailableException:
+                  Type: Succeed
+                CheckUtilizationPercentage:
+                  Type: Choice
+                  Default: SufficientUtilizationPercentage
+                  Choices:
+                    - Next: SNS Publish
+                      Condition: !Sub >-
+                        {% $UtilizationPercentage < ${UtilizationThreshold} %}
+                      Output: >-
+                        {% $states.input %}
+                SufficientUtilizationPercentage:
+                  Type: Succeed
+                SNS Publish:
+                  Type: Task
+                  Resource: arn:aws:states:::aws-sdk:sns:publish
+                  Arguments:
+                    TopicArn: !Ref SnsTopic
+                    Subject: Low Savings Plan Utilization Alert
+                    Message: !Sub >-
+                      {% 'Important: Low Utilization Detected for Recently Purchased Savings Plan\n\nWe have detected lower than expected utilization for your recently purchased Savings Plan. Since this Savings Plan was purchased within the last 7 days and in the current calendar month, you have the option to return it without any additional charges.\n\nDetails:\n- Savings Plan ARN: ' & $states.input.SavingsPlanArn & '\n- Current Utilization: ' & $UtilizationPercentage & '%\n- Purchase Date: ' & $purchaseDateStr & '\n- Alert Threshold: ${UtilizationThreshold}%\n\nRecommended Actions:\n1. Review your current workload patterns and expected usage\n2. Consider returning this Savings Plan if the low utilization is expected to continue\n3. Evaluate if a different Savings Plan type or commitment amount would better match your usage\n\nImportant Note: Savings Plans can only be returned if they were purchased in the current calendar month and within the last 7 days. Please take action soon if you wish to make changes.\n\nFor more information about returning Savings Plans, visit:\nhttps://docs.aws.amazon.com/savingsplans/latest/userguide/return-sp.html\n\nIf you need assistance, please contact AWS Support.' %}
+                  End: True
+            Output: >-
+              {% $states.input %}
+            Next: CheckNextToken
+          CheckNextToken:
+            Type: Choice
+            Default: Complete
+            Choices:
+              - Next: DescribeSavingsPlansNextToken
+                Condition: >-
+                  {% $boolean($nextToken) %}
+                Output: >-
+                  {% $states.input %}
+          Complete:
+            Type: Succeed
+          DescribeSavingsPlansNextToken:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
+            Arguments:
+              States:
+                - active
+              nextToken: >-
+                {% $nextToken %}
+            Assign:
+              nextToken: >-
+                {% $exists($states.result.nextToken) ? $states.result.nextToken : '' %}
+            Output: >-
+              {% $states.result %}
+            Next: MapSavingsPlans
+
+  SnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+
+  TopicPolicy:
+    Type: AWS::SNS::TopicInlinePolicy
+    Properties:
+      TopicArn: !Ref SnsTopic
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: NoHTTP
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - sns:Subscribe
+              - sns:Receive
+            Resource:
+              - !Ref SnsTopic
+            Condition:
+              StringEquals:
+                SNS:Protocol: http
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - sns:Publish
+              - sns:RemovePermission
+              - sns:SetTopicAttributes
+              - sns:DeleteTopic
+              - sns:ListSubscriptionsByTopic
+              - sns:GetTopicAttributes
+              - sns:Receive
+              - sns:AddPermission
+              - sns:Subscribe
+            Resource:
+              - !Ref SnsTopic
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  'Fn::ForEach::Subscriptions':
+    - Email
+    - !Ref AlertEmails
+    - 'Subscription&{Email}':
+        Type: AWS::SNS::Subscription
+        Properties:
+          TopicArn: !Ref SnsTopic
+          Protocol: email
+          Endpoint: !Ref Email
