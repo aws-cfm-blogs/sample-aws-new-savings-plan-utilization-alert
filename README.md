@@ -25,7 +25,7 @@ We will deploy a CloudFormation stack that creates a Step Functions state machin
 In this section we will deploy sources for this solution in your account:
 
 1. Login to your [AWS Management Console](https://aws.amazon.com/console/) where you have bought Savings Plans
-2. [Deploy this CloudFormation stack](INSERT_STACK_URL_HERE)
+2. Deploy this [CloudFormation stack](https://github.com/aws-samples/sample-aws-new-savings-plan-utilization-alert/blob/main/sample-aws-new-savings-plan-utilization-alert.yaml)
 3. Provide the Stack Name as `new-sp-utilization-alert`
 4. In the AlertEmails parameter, enter a comma-separated list of email addresses that will receive notifications about underutilized Savings Plans.
 5. In the ScheduleExpression parameter, specify the execution frequency for the Step Functions state machine using cron format (default is daily at 9 AM UTC).
