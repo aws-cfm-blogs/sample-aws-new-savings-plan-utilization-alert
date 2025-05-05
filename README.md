@@ -3,16 +3,16 @@
 **Syed Muhammad Tawha**, Principal Technical Account Manager
 **Dan Johns**, Sr. Solution Architect
 
-When talking with customers, I frequently get asked how to effectively return newly purchased [Savings Plans](amazon.com/savingsplans/) that were bought by mistake and are not being utilized properly. The solution involves implementing monitoring systems and automated alerts to identify underutilized Savings Plans within the eligible return period.
+As organizations grow, FinOps teams need a holistic view of their AWS Savings Plans commitments to ensure optimal utilization. The solution involves implementing monitoring systems and automated alerts to identify underutilized Savings Plans within the eligible return period.
 
-When you purchase a Savings Plan, you make a commitment for one or three years. However, if you identify a purchase error that needs rectification, you have a limited time to do so. Savings Plans with an hourly commitment of $100 or less can be returned if they were purchased within the last seven days and in the same calendar month, provided you haven't reached your return limit. Once the calendar month ends (UTC time), these purchased Savings Plans cannot be returned.
+When you purchase a Savings Plan, you make a commitment for one or three years. Savings Plans with an hourly commitment of $100 or less can be returned if they were purchased within the last seven days and in the same calendar month, provided you haven't reached your return limit. Once the calendar month ends (UTC time), these purchased Savings Plans cannot be returned.
 
 In this blog post, we provide [AWS CloudFormation](https://aws.amazon.com/cloudformation/) template that creates [AWS Step Functions](https://aws.amazon.com/step-functions/) state machine, [Amazon Simple Notification Service (SNS)](amazon.com/sns/) topic, [Amazon EventBridge](https://aws.amazon.com/eventbridge/) scheduler, and necessary [AWS Identity and Access Management (IAM)](https://aws.amazon.com/iam/) roles to automate the monitoring of newly purchased Savings Plans and highlight those that are underutilized. The template simplifies the deployment process by creating all required resources with a single stack deployment.
 
 ## Overview of Solution:
-We will deploy a CloudFormation stack that creates a Step Functions state machine, SNS topic, event scheduler, and IAM execution role. The state machine analyzes all Savings Plans in your account, including those purchased across your organization for payer accounts. The workflow filters active Savings Plans based on their purchase date, focusing on those acquired within the last 7 days and the current calendar month. It then evaluates their utilization rates and identifies plans falling below the defined threshold. The state machine executes at your specified frequency and uses Amazon SNS to send email alerts to addresses you provide during CloudFormation stack creation. These alerts contain detailed information about low-utilization Savings Plans and instructions for the return process.
+This solution deploys a state machine that analyzes all Savings Plans in your account, including those purchased across your organization for payer accounts. The workflow filters active Savings Plans based on their purchase date, focusing on those acquired within the last 7 days and the current calendar month. It then evaluates their utilization rates and identifies plans falling below the defined threshold. The state machine executes at your specified frequency and uses Amazon SNS to send email alerts to addresses you provide during CloudFormation stack creation. These alerts contain detailed information about low-utilization Savings Plans and instructions for the return process.
 
-![image](https://github.com/user-attachments/assets/f87739f7-1ed1-4afa-9b20-6d594bf4c70d)
+![diagram](https://github.com/user-attachments/assets/4e06c569-353e-4cc9-b885-7c0939f1ac70)
 
 
 ## Solution Walk Through:
