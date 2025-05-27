@@ -18,6 +18,10 @@ Parameters:
     Type: Number
     Default: 50
 
+  PayerAccountId:
+    Type: String
+    AllowedPattern: ^\d{12}$
+
 Resources:
   SavingsPlansAlerts:
     Type: AWS::Serverless::StateMachine
@@ -27,14 +31,9 @@ Resources:
           Statement:
             - Effect: Allow
               Action:
-                - savingsplans:DescribeSavingsPlans
+                - sts:AssumeRole
               Resource:
-                - !Sub arn:${AWS::Partition}:savingsplans::${AWS::AccountId}:savingsplan/*
-            - Effect: Allow
-              Action:
-                - ce:GetSavingsPlansUtilization
-              Resource:
-                - "*"
+                - !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
             - Effect: Allow
               Action:
                 - sns:Publish
@@ -64,6 +63,8 @@ Resources:
           DescribeSavingsPlans:
             Type: Task
             Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
+            Credentials:
+              RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
             Arguments:
               States:
                 - active
@@ -108,6 +109,8 @@ Resources:
                 GetSavingsPlansUtilization:
                   Type: Task
                   Resource: arn:aws:states:::aws-sdk:costexplorer:getSavingsPlansUtilization
+                  Credentials:
+                    RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
                   Arguments:
                     TimePeriod:
                       Start: >-
@@ -172,6 +175,8 @@ Resources:
           DescribeSavingsPlansNextToken:
             Type: Task
             Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
+            Credentials:
+              RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
             Arguments:
               States:
                 - active
@@ -229,9 +234,16 @@ Resources:
   'Fn::ForEach::Subscriptions':
     - Email
     - !Ref AlertEmails
-    - 'Subscription&{Email}':
+    - "Subscription&{Email}":
         Type: AWS::SNS::Subscription
         Properties:
           TopicArn: !Ref SnsTopic
           Protocol: email
           Endpoint: !Ref Email
+
+Outputs:
+  ExecutionRoleArn:
+    Value: !GetAtt SavingsPlansAlertsRole.Arn
+
+  StateMachineArn:
+    Value: !Ref SavingsPlansAlerts
