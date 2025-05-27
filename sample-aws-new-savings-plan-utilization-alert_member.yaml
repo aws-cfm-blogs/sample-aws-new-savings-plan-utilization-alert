@@ -18,7 +18,7 @@ Parameters:
     Type: Number
     Default: 50
 
-  PayerAccountId:
+  ManagementAccountId:
     Type: String
     AllowedPattern: ^\d{12}$
 
@@ -33,7 +33,7 @@ Resources:
               Action:
                 - sts:AssumeRole
               Resource:
-                - !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
+                - !Sub arn:${AWS::Partition}:iam::${ManagementAccountId}:role/new-sp-utilization-alert-assumed-role
             - Effect: Allow
               Action:
                 - sns:Publish
@@ -64,7 +64,7 @@ Resources:
             Type: Task
             Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
             Credentials:
-              RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
+              RoleArn: !Sub arn:${AWS::Partition}:iam::${ManagementAccountId}:role/new-sp-utilization-alert-assumed-role
             Arguments:
               States:
                 - active
@@ -110,7 +110,7 @@ Resources:
                   Type: Task
                   Resource: arn:aws:states:::aws-sdk:costexplorer:getSavingsPlansUtilization
                   Credentials:
-                    RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
+                    RoleArn: !Sub arn:${AWS::Partition}:iam::${ManagementAccountId}:role/new-sp-utilization-alert-assumed-role
                   Arguments:
                     TimePeriod:
                       Start: >-
@@ -176,7 +176,7 @@ Resources:
             Type: Task
             Resource: arn:aws:states:::aws-sdk:savingsplans:describeSavingsPlans
             Credentials:
-              RoleArn: !Sub arn:${AWS::Partition}:iam::${PayerAccountId}:role/new-sp-utilization-alert-assumed-role
+              RoleArn: !Sub arn:${AWS::Partition}:iam::${ManagementAccountId}:role/new-sp-utilization-alert-assumed-role
             Arguments:
               States:
                 - active
