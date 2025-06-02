@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  ExecutionRoleArn:
+    Type: String
+
+  StateMachineArn:
+    Type: String
+
+Resources:
+
+  AssumedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Role to be assumed by Step Function Execution in Linked Account.
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref ExecutionRoleArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref StateMachineArn
+      RoleName: new-sp-utilization-alert-assumed-role
+      Policies: 
+        - PolicyName: StepFunctionPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - savingsplans:DescribeSavingsPlans
+                Resource:
+                  - !Sub arn:${AWS::Partition}:savingsplans::${AWS::AccountId}:savingsplan/*
+              - Effect: Allow
+                Action:
+                  - ce:GetSavingsPlansUtilization
+                Resource:
+                  - "*"
